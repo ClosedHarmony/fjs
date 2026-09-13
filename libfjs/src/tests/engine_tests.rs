@@ -331,6 +331,14 @@ async fn test_engine_runtime_proxy_methods_fail_while_initializing() {
     let close_engine = engine.clone();
     let close_task = tokio::spawn(async move { close_engine.close().await });
 
+    // The spawned task stores CLOSED synchronously in its first poll
+    // (begin_close runs before any await), so wait for that store before
+    // releasing the attachment. Otherwise the woken init could win the
+    // finish_init() CAS purely on scheduler timing, making this test flaky.
+    while !engine.closed() {
+        tokio::task::yield_now().await;
+    }
+
     release_blocking_init_attachment();
 
     close_task.await.unwrap().unwrap();
