@@ -242,7 +242,7 @@ check_structure() {
     require_exact_line "libfjs/cargokit.yaml" "    - $hash_input"
   done
   require_exact_line "libfjs/cargokit.yaml" "    rust_toolchain: '1.97.1'"
-  require_exact_line "libfjs/cargokit.yaml" "    flutter_version: '3.24.0'"
+  require_exact_line "libfjs/cargokit.yaml" "    flutter_version: '3.35.3'"
   require_exact_line "libfjs/cargokit.yaml" "    xcode_version: '16.4'"
   require_exact_line "libfjs/cargokit.yaml" "      iphoneos: '18.5'"
   require_exact_line "libfjs/cargokit.yaml" "      macosx: '15.5'"
