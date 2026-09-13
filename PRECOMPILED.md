@@ -26,8 +26,9 @@ Pinned targets (`libfjs/cargokit.yaml` → `build_recipe.rust_targets`):
 | Windows | `x86_64-pc-windows-msvc` |
 | Linux | `x86_64-unknown-linux-gnu` |
 
-Toolchain pins: Rust 1.97.1, Flutter 3.24.0, Xcode 16.4 (iOS SDK 18.5 /
-macOS SDK 15.5).
+Toolchain pins: Rust 1.97.1, Flutter 3.35.3, Xcode 16.4 (iOS SDK 18.5 /
+macOS SDK 15.5). The minimum supported Flutter is 3.35.3: FRB 2.13.0
+requires Dart >= 3.9.2, which first shipped in that release.
 
 ## Pipeline layout
 

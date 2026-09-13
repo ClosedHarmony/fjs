@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FLUTTER_VERSION: 3.24.0
+  FLUTTER_VERSION: 3.35.3
   RUST_TOOLCHAIN: 1.97.1
   RUST_CRATE_DIR: libfjs
   ANDROID_NDK_VERSION: 28.2.13676358
@@ -170,7 +170,9 @@ jobs:
         run: |
           set -euo pipefail
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --install "ndk;${ANDROID_NDK_VERSION}" >/dev/null
+          echo "sdkmanager: $("$SDKMANAGER" --version)"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "ndk;${ANDROID_NDK_VERSION}"
           test -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
 
       - name: Build the Android and Linux generation
