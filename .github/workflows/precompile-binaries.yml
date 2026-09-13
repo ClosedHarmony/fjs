@@ -100,6 +100,12 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/darwin-xcframework/rust
+          cache-on-failure: 'true'
+
       - name: Resolve dependencies
         run: dart pub get
         working-directory: cargokit/build_tool
@@ -138,11 +144,29 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/rust-android-linux
+          cache-on-failure: 'true'
+
       - name: Resolve dependencies
         run: dart pub get
         working-directory: cargokit/build_tool
 
+      - name: Resolve Android SDK location
+        id: android-sdk
+        run: echo "path=$ANDROID_HOME" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android NDK
+        id: ndk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.android-sdk.outputs.path }}/ndk/${{ env.ANDROID_NDK_VERSION }}
+          key: android-ndk-${{ env.ANDROID_NDK_VERSION }}-${{ runner.os }}
+
       - name: Install pinned Android NDK
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
@@ -193,6 +217,12 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/rust-windows
+          cache-on-failure: 'true'
 
       - name: Resolve dependencies
         run: dart pub get
