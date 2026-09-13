@@ -15,7 +15,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 anyhow = "1"
-flutter_rust_bridge = "=2.12.0"
+flutter_rust_bridge = "=2.13.0"
 futures = "0.3"
 rquickjs = { git = "https://github.com/DelSkayn/rquickjs.git", rev = "04e2734", version = "0.12.1", features = ["full-async", "bindgen", "loader", "dyn-load", "parallel", "macro", "futures"] }
 tokio = { version = "1", features = ["full"] }
