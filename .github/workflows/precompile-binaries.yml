@@ -145,7 +145,8 @@ jobs:
       - name: Install pinned Android NDK
         run: |
           set -euo pipefail
-          yes | sdkmanager --install "ndk;${ANDROID_NDK_VERSION}" >/dev/null
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --install "ndk;${ANDROID_NDK_VERSION}" >/dev/null
           test -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
 
       - name: Build the Android and Linux generation
