@@ -2,6 +2,10 @@ name: Precompile Binaries
 
 on:
   workflow_call:
+    secrets:
+      PRECOMPILE_BINARIES_PRIVATE_KEY:
+        description: 'Ed25519 signing key for precompiled generations'
+        required: true
   workflow_dispatch:
 
 permissions:
