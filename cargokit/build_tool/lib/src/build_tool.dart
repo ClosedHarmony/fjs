@@ -225,6 +225,21 @@ class BuildPrecompiledGenerationCommand extends Command {
       ..addMultiOption(
         'target',
         help: 'Pinned Rust target triple. Repeat for each target.',
+      )
+      ..addOption(
+        'android-sdk-location',
+        help: 'Location of the Android SDK. Required when any requested '
+            'target is an Android triple.',
+      )
+      ..addOption(
+        'android-ndk-version',
+        help: 'Android NDK version. Required when any requested target is '
+            'an Android triple.',
+      )
+      ..addOption(
+        'android-min-sdk-version',
+        help: 'Android minimum SDK version. Required when any requested '
+            'target is an Android triple.',
       );
   }
 
@@ -237,11 +252,24 @@ class BuildPrecompiledGenerationCommand extends Command {
 
   @override
   Future<void> run() async {
+    final androidMinSdkVersionString =
+        argResults!['android-min-sdk-version'] as String?;
+    final androidMinSdkVersion = androidMinSdkVersionString == null
+        ? null
+        : int.tryParse(androidMinSdkVersionString);
+    if (androidMinSdkVersionString != null && androidMinSdkVersion == null) {
+      throw ArgumentError(
+        'Invalid android-min-sdk-version: $androidMinSdkVersionString',
+      );
+    }
     final generation = LocalPrecompiledGeneration(
       manifestDir: argResults!['manifest-dir'] as String,
       outputDir: argResults!['output-dir'] as String,
       tempDir: argResults!['temp-dir'] as String,
       targetTriples: argResults!['target'] as List<String>,
+      androidSdkLocation: argResults!['android-sdk-location'] as String?,
+      androidNdkVersion: argResults!['android-ndk-version'] as String?,
+      androidMinSdkVersion: androidMinSdkVersion,
     );
     await generation.run();
   }

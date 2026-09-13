@@ -433,6 +433,9 @@ class LocalPrecompiledGeneration {
     required this.outputDir,
     required this.tempDir,
     required this.targetTriples,
+    this.androidSdkLocation,
+    this.androidNdkVersion,
+    this.androidMinSdkVersion,
     LocalPrecompiledTargetBuilder? targetBuilder,
     this.currentHost,
     this.compositeProcessRunner,
@@ -442,6 +445,9 @@ class LocalPrecompiledGeneration {
   final String outputDir;
   final String tempDir;
   final List<String> targetTriples;
+  final String? androidSdkLocation;
+  final String? androidNdkVersion;
+  final int? androidMinSdkVersion;
   final LocalPrecompiledTargetBuilder targetBuilder;
   final CompositeHost? currentHost;
   final CompositeProcessRunner? compositeProcessRunner;
@@ -486,6 +492,16 @@ class LocalPrecompiledGeneration {
         );
       }
     }
+    final wantsAndroid = requested.any((target) => target.android != null);
+    if (wantsAndroid &&
+        (androidSdkLocation == null ||
+            androidNdkVersion == null ||
+            androidMinSdkVersion == null)) {
+      throw ArgumentError(
+        'Android targets require --android-sdk-location, '
+        '--android-ndk-version and --android-min-sdk-version.',
+      );
+    }
 
     final generationHash = CrateHash.compute(manifest);
     final workspaceRoot = path.normalize(path.absolute(path.join(
@@ -513,7 +529,11 @@ class LocalPrecompiledGeneration {
         targetTempDir: buildTemp.path,
         manifestDir: manifest,
         crateInfo: CrateInfo.load(manifest),
-        isAndroid: false,
+        isAndroid: wantsAndroid,
+        androidSdkPath: wantsAndroid ? androidSdkLocation : null,
+        androidNdkVersion: wantsAndroid ? androidNdkVersion : null,
+        androidMinSdkVersion: wantsAndroid ? androidMinSdkVersion : null,
+        javaHome: wantsAndroid ? Platform.environment['JAVA_HOME'] : null,
         iosDeploymentTarget: recipe.deploymentTargets['ios'],
         macosDeploymentTarget: recipe.deploymentTargets['macos'],
       );
