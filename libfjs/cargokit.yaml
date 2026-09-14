@@ -1,5 +1,5 @@
 precompiled_binaries:
-  url_prefix: https://github.com/TsinbeiLabs/fjs/releases/download/precompiled_
+  url_prefix: https://github.com/ClosedHarmony/fjs/releases/download/precompiled_
   public_key: c5766595e58b3b0ed70c041f0cd11df8b34e08e12a8ecd03c4f94c6edf16f472
   workspace_root: ..
   hash_inputs:
