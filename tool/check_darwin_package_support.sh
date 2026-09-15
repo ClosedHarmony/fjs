@@ -258,7 +258,8 @@ aarch64-linux-android
 armv7-linux-androideabi
 x86_64-linux-android
 x86_64-pc-windows-msvc
-x86_64-unknown-linux-gnu'
+x86_64-unknown-linux-gnu
+aarch64-unknown-linux-gnu'
   recipe_targets="$(awk '
     $0 == "    rust_targets:" { targets = 1; next }
     targets && $0 == "  composite_groups:" { exit }

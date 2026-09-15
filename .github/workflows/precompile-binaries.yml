@@ -198,6 +198,58 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Native Linux arm64. Built on the hosted ARM runner with its own host
+  # toolchain (no cross linker/CC wiring), mirroring how the x64 leg of
+  # android-linux builds its native target.
+  linux-arm64:
+    needs: generation-status
+    if: needs.generation-status.outputs.complete != 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup pinned Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/rust-linux-arm64
+          cache-on-failure: 'true'
+
+      - name: Resolve dependencies
+        run: dart pub get
+        working-directory: cargokit/build_tool
+
+      - name: Build the Linux arm64 generation
+        run: >-
+          dart run cargokit/build_tool/bin/build_tool.dart
+          build-precompiled-generation
+          --manifest-dir=${{ env.RUST_CRATE_DIR }}
+          --output-dir=build/generation-linux-arm64
+          --temp-dir=build/rust-linux-arm64
+          --target=aarch64-unknown-linux-gnu
+
+      - name: Upload Linux arm64 generation fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fjs-generation-linux-arm64-${{ github.sha }}
+          path: build/generation-linux-arm64
+          if-no-files-found: error
+          retention-days: 7
+
   windows:
     needs: generation-status
     if: needs.generation-status.outputs.complete != 'true'
@@ -251,7 +303,7 @@ jobs:
   # the repository signing key, publish it as the precompiled_<hash> release,
   # and verify the published bytes end to end.
   publish:
-    needs: [generation-status, darwin, android-linux, windows]
+    needs: [generation-status, darwin, android-linux, linux-arm64, windows]
     if: needs.generation-status.outputs.complete != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -283,6 +335,12 @@ jobs:
           name: fjs-generation-android-linux-${{ github.sha }}
           path: build/fragments/android-linux
 
+      - name: Download Linux arm64 fragment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: fjs-generation-linux-arm64-${{ github.sha }}
+          path: build/fragments/linux-arm64
+
       - name: Download Windows fragment
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -295,6 +353,7 @@ jobs:
           --output-dir build/generation-merged
           build/fragments/darwin
           build/fragments/android-linux
+          build/fragments/linux-arm64
           build/fragments/windows
 
       - name: Publish the completed v2 generation

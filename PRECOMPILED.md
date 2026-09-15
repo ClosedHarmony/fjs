@@ -24,7 +24,7 @@ Pinned targets (`libfjs/cargokit.yaml` → `build_recipe.rust_targets`):
 | macOS | `aarch64-apple-darwin`, `x86_64-apple-darwin` |
 | Android | `aarch64-linux-android`, `armv7-linux-androideabi`, `x86_64-linux-android` (minSdk 21, NDK 28.2.13676358) |
 | Windows | `x86_64-pc-windows-msvc` |
-| Linux | `x86_64-unknown-linux-gnu` |
+| Linux | `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` |
 
 Toolchain pins: Rust 1.97.1, Flutter 3.35.3, Xcode 16.4 (iOS SDK 18.5 /
 macOS SDK 15.5). The minimum supported Flutter is 3.35.3: FRB 2.13.0
@@ -42,8 +42,9 @@ merges, signs and publishes:
 3. `android-linux` (ubuntu) — three Android ABIs (NDK cross) + native Linux
    x64 via `build-precompiled-generation --android-sdk-location …
    --android-ndk-version … --android-min-sdk-version …`.
-4. `windows` — native MSVC x64.
-5. `publish` (ubuntu) — `tool/merge_generations.dart` re-verifies every asset
+4. `linux-arm64` (ubuntu ARM) — native Linux arm64 on the hosted ARM runner.
+5. `windows` — native MSVC x64.
+6. `publish` (ubuntu) — `tool/merge_generations.dart` re-verifies every asset
    (length + sha256) and merges the fragments into one generation;
    `publish-precompiled-generation` signs it with
    `PRECOMPILE_BINARIES_PRIVATE_KEY` and uploads to the release; a final
