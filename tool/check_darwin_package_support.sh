@@ -203,14 +203,17 @@ check_structure() {
     "tool/check_minimum_flutter_compatibility.sh"
   require_exact_line ".github/workflows/precompile-binaries.yml" \
     '  group: precompiled-${{ github.repository }}-${{ github.sha }}'
-  require_exact_line ".github/workflows/precompile-binaries.yml" "        id: generation"
   require_contains ".github/workflows/precompile-binaries.yml" \
     "      PRECOMPILE_BINARIES_PRIVATE_KEY:"
   require_exact_line ".github/workflows/precompile-binaries.yml" "        continue-on-error: true"
-  require_line_count ".github/workflows/precompile-binaries.yml" \
-    "        if: steps.generation.outcome == 'failure'" 4
-  require_line_count ".github/workflows/precompile-binaries.yml" \
-    "          verify-binaries" 2
+  require_contains ".github/workflows/precompile-binaries.yml" \
+    "build-precompiled-generation"
+  require_contains ".github/workflows/precompile-binaries.yml" \
+    "tool/merge_generations.dart"
+  require_contains ".github/workflows/precompile-binaries.yml" \
+    "publish-precompiled-generation"
+  require_contains ".github/workflows/precompile-binaries.yml" \
+    "verify-binaries"
   require_exact_line ".github/workflows/publish-pub.yml" "  publish-precompiled:"
   require_exact_line ".github/workflows/publish-pub.yml" \
     "    uses: ./.github/workflows/precompile-binaries.yml"
@@ -261,20 +264,31 @@ check_structure() {
 aarch64-apple-ios-sim
 x86_64-apple-ios
 aarch64-apple-darwin
-x86_64-apple-darwin'
+x86_64-apple-darwin
+aarch64-linux-android
+armv7-linux-androideabi
+x86_64-linux-android
+x86_64-pc-windows-msvc
+x86_64-unknown-linux-gnu
+aarch64-unknown-linux-gnu'
   recipe_targets="$(awk '
     $0 == "    rust_targets:" { targets = 1; next }
     targets && $0 == "  composite_groups:" { exit }
     targets && /^      - / { sub(/^      - /, ""); print }
   ' libfjs/cargokit.yaml)"
   [ "$recipe_targets" = "$expected_targets" ] ||
-    fail "libfjs/cargokit.yaml must pin exactly the five Apple Rust targets"
+    fail "libfjs/cargokit.yaml must pin exactly the supported Rust targets"
+  expected_darwin_targets='aarch64-apple-ios
+aarch64-apple-ios-sim
+x86_64-apple-ios
+aarch64-apple-darwin
+x86_64-apple-darwin'
   composite_targets="$(awk '
     $0 == "      required_targets:" { targets = 1; next }
     targets && $0 == "      argv:" { exit }
     targets && /^        - / { sub(/^        - /, ""); print }
   ' libfjs/cargokit.yaml)"
-  [ "$composite_targets" = "$expected_targets" ] ||
+  [ "$composite_targets" = "$expected_darwin_targets" ] ||
     fail "SwiftPM composite must require exactly the five Apple Rust targets"
   require_line_count "libfjs/cargokit.yaml" "    - name: swiftpm" 1
   require_exact_line "libfjs/cargokit.yaml" "      host: macos"

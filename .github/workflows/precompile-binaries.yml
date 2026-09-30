@@ -4,6 +4,7 @@ on:
   workflow_call:
     secrets:
       PRECOMPILE_BINARIES_PRIVATE_KEY:
+        description: 'Ed25519 signing key for precompiled generations'
         required: true
   workflow_dispatch:
 
@@ -18,11 +19,48 @@ env:
   FLUTTER_VERSION: 3.35.5
   RUST_TOOLCHAIN: 1.97.1
   RUST_CRATE_DIR: libfjs
+  ANDROID_NDK_VERSION: 28.2.13676358
+  ANDROID_MIN_SDK_VERSION: '21'
 
 jobs:
-  publish-darwin-generation:
+  # Skip every expensive build job when the generation for the current crate
+  # hash is already published (idempotent re-runs and main-branch pushes).
+  generation-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      complete: ${{ steps.verify.outcome == 'success' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Resolve dependencies
+        run: dart pub get
+        working-directory: cargokit/build_tool
+
+      - name: Verify an existing v2 generation
+        id: verify
+        continue-on-error: true
+        run: >-
+          dart run cargokit/build_tool/bin/build_tool.dart
+          verify-binaries
+          --manifest-dir=${{ env.RUST_CRATE_DIR }}
+
+  # Apple targets plus the SwiftPM composite (xcframework). Must run on the
+  # pinned macOS/Xcode combination recorded in the build recipe.
+  darwin:
+    needs: generation-status
+    if: needs.generation-status.outputs.complete != 'true'
     runs-on: macos-15
-    timeout-minutes: 90
+    timeout-minutes: 150
     steps:
       - name: Checkout full history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -62,47 +100,284 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
 
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/darwin-xcframework/rust
+          cache-on-failure: 'true'
+
       - name: Resolve dependencies
         run: dart pub get
         working-directory: cargokit/build_tool
 
-      - name: Verify an existing v2 generation
-        id: generation
-        continue-on-error: true
-        run: >-
-          dart run cargokit/build_tool/bin/build_tool.dart
-          verify-binaries
-          --manifest-dir=${{ env.RUST_CRATE_DIR }}
-
       - name: Build the shared CocoaPods and SwiftPM generation
-        if: steps.generation.outcome == 'failure'
         run: tool/build_fjs_xcframework.sh --configuration Release
 
+      - name: Upload darwin generation fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fjs-generation-darwin-${{ github.sha }}
+          path: build/darwin-xcframework/generation
+          if-no-files-found: error
+          retention-days: 7
+
+  # Android ABIs (cross via the pinned NDK) plus native Linux x64.
+  android-linux:
+    needs: generation-status
+    if: needs.generation-status.outputs.complete != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup pinned Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/rust-android-linux
+          cache-on-failure: 'true'
+
+      - name: Resolve dependencies
+        run: dart pub get
+        working-directory: cargokit/build_tool
+
+      - name: Resolve Android SDK location
+        id: android-sdk
+        run: echo "path=$ANDROID_HOME" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Android NDK
+        id: ndk-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.android-sdk.outputs.path }}/ndk/${{ env.ANDROID_NDK_VERSION }}
+          key: android-ndk-${{ env.ANDROID_NDK_VERSION }}-${{ runner.os }}
+
+      - name: Install pinned Android NDK
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          echo "sdkmanager: $("$SDKMANAGER" --version)"
+          yes | "$SDKMANAGER" --licenses || true
+          "$SDKMANAGER" --install "ndk;${ANDROID_NDK_VERSION}"
+          test -d "${ANDROID_HOME}/ndk/${ANDROID_NDK_VERSION}"
+
+      - name: Build the Android and Linux generation
+        run: >-
+          dart run cargokit/build_tool/bin/build_tool.dart
+          build-precompiled-generation
+          --manifest-dir=${{ env.RUST_CRATE_DIR }}
+          --output-dir=build/generation-android-linux
+          --temp-dir=build/rust-android-linux
+          --android-sdk-location=${ANDROID_HOME}
+          --android-ndk-version=${ANDROID_NDK_VERSION}
+          --android-min-sdk-version=${ANDROID_MIN_SDK_VERSION}
+          --target=aarch64-linux-android
+          --target=armv7-linux-androideabi
+          --target=x86_64-linux-android
+          --target=x86_64-unknown-linux-gnu
+
+      - name: Upload Android/Linux generation fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fjs-generation-android-linux-${{ github.sha }}
+          path: build/generation-android-linux
+          if-no-files-found: error
+          retention-days: 7
+
+  # Native Linux arm64. Built on the hosted ARM runner with its own host
+  # toolchain (no cross linker/CC wiring), mirroring how the x64 leg of
+  # android-linux builds its native target.
+  linux-arm64:
+    needs: generation-status
+    if: needs.generation-status.outputs.complete != 'true'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # subosito/flutter-action cannot resolve the pinned 3.35.5 for
+      # linux-arm64 (its manifest has no such combo). Flutter here only runs
+      # the Dart build tool, and the generation provenance records the
+      # recipe's pinned version rather than the running SDK, so tracking
+      # stable via git (like the Luotopia app's release workflow) is safe.
+      - name: Setup Flutter (arm64 via git)
+        run: |
+          set -euo pipefail
+          git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$HOME/flutter"
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/flutter/bin:$PATH"
+          flutter --version
+          flutter config --no-analytics
+
+      - name: Setup pinned Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/rust-linux-arm64
+          cache-on-failure: 'true'
+
+      - name: Resolve dependencies
+        run: dart pub get
+        working-directory: cargokit/build_tool
+
+      - name: Build the Linux arm64 generation
+        run: >-
+          dart run cargokit/build_tool/bin/build_tool.dart
+          build-precompiled-generation
+          --manifest-dir=${{ env.RUST_CRATE_DIR }}
+          --output-dir=build/generation-linux-arm64
+          --temp-dir=build/rust-linux-arm64
+          --target=aarch64-unknown-linux-gnu
+
+      - name: Upload Linux arm64 generation fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fjs-generation-linux-arm64-${{ github.sha }}
+          path: build/generation-linux-arm64
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    needs: generation-status
+    if: needs.generation-status.outputs.complete != 'true'
+    runs-on: windows-latest
+    timeout-minutes: 150
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup pinned Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: libfjs -> ../build/rust-windows
+          cache-on-failure: 'true'
+
+      - name: Resolve dependencies
+        run: dart pub get
+        working-directory: cargokit/build_tool
+
+      - name: Build the Windows generation
+        run: >-
+          dart run cargokit/build_tool/bin/build_tool.dart
+          build-precompiled-generation
+          --manifest-dir=${{ env.RUST_CRATE_DIR }}
+          --output-dir=build/generation-windows
+          --temp-dir=build/rust-windows
+          --target=x86_64-pc-windows-msvc
+
+      - name: Upload Windows generation fragment
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fjs-generation-windows-${{ github.sha }}
+          path: build/generation-windows
+          if-no-files-found: error
+          retention-days: 7
+
+  # Merge the per-runner fragments into one complete generation, sign it with
+  # the repository signing key, publish it as the precompiled_<hash> release,
+  # and verify the published bytes end to end.
+  publish:
+    needs: [generation-status, darwin, android-linux, linux-arm64, windows]
+    if: needs.generation-status.outputs.complete != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Resolve dependencies
+        run: dart pub get
+        working-directory: cargokit/build_tool
+
+      - name: Download darwin fragment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: fjs-generation-darwin-${{ github.sha }}
+          path: build/fragments/darwin
+
+      - name: Download Android/Linux fragment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: fjs-generation-android-linux-${{ github.sha }}
+          path: build/fragments/android-linux
+
+      - name: Download Linux arm64 fragment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: fjs-generation-linux-arm64-${{ github.sha }}
+          path: build/fragments/linux-arm64
+
+      - name: Download Windows fragment
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: fjs-generation-windows-${{ github.sha }}
+          path: build/fragments/windows
+
+      - name: Merge generation fragments
+        run: >-
+          dart run cargokit/build_tool/tool/merge_generations.dart
+          --output-dir build/generation-merged
+          build/fragments/darwin
+          build/fragments/android-linux
+          build/fragments/linux-arm64
+          build/fragments/windows
+
       - name: Publish the completed v2 generation
-        if: steps.generation.outcome == 'failure'
         run: >-
           dart run cargokit/build_tool/bin/build_tool.dart
           publish-precompiled-generation
           --manifest-dir=${{ env.RUST_CRATE_DIR }}
-          --generation-dir=build/darwin-xcframework/generation
+          --generation-dir=build/generation-merged
           --repository=${{ github.repository }}
           --source-commit=${{ github.sha }}
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PRIVATE_KEY: ${{ secrets.PRECOMPILE_BINARIES_PRIVATE_KEY }}
 
       - name: Verify the published v2 generation
-        if: steps.generation.outcome == 'failure'
         run: >-
           dart run cargokit/build_tool/bin/build_tool.dart
           verify-binaries
           --manifest-dir=${{ env.RUST_CRATE_DIR }}
-
-      - name: Upload SwiftPM delivery artifact
-        if: steps.generation.outcome == 'failure'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: fjs-swiftpm-${{ github.sha }}
-          path: darwin/fjs/Binaries/fjs.xcframework.zip
-          if-no-files-found: error
-          retention-days: 30
