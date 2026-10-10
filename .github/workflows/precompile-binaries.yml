@@ -258,6 +258,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Windows x64 plus arm64 cross-compiled from the x64 host: the hosted image
+  # ships the MSVC ARM64 cross linker and libraries, so a native ARM runner is
+  # not needed for the Rust targets.
   windows:
     needs: generation-status
     if: needs.generation-status.outputs.complete != 'true'
@@ -279,6 +282,7 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-pc-windows-msvc
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -298,6 +302,7 @@ jobs:
           --output-dir=build/generation-windows
           --temp-dir=build/rust-windows
           --target=x86_64-pc-windows-msvc
+          --target=aarch64-pc-windows-msvc
 
       - name: Upload Windows generation fragment
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
